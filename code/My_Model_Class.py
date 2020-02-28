@@ -8,7 +8,7 @@ from sklearn.metrics import mean_squared_error, roc_auc_score, make_scorer, roc_
 
 class My_Model():
     
-    def __init__(self, X, y, model_func, lambda_func, cv_num=10, lambda_set=np.logspace(-5, 5, 20), test_size=0.1):
+    def __init__(self, X, y, model_func, lambda_func, cv_num=10, lambda_set=np.linspace(0, 10, 50), test_size=0.1):
         self.__X = X
         self.__y = y
         self.__model_func = model_func

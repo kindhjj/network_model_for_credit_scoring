@@ -1,1 +1,4 @@
 result
+*.html
+.ipynb_checkpoints
+__pycache__

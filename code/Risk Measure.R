@@ -2,7 +2,6 @@ library(psycho)
 library(tidyverse)
 library(dplyr)
 
-library(gcdnet)
 library(glmnet)
 library(pROC)
 library(kableExtra)
@@ -10,9 +9,9 @@ library(ggplot2)
 
 #----------read data and standardization--------------
 dat <-
-  read.csv("/data/SME_dataset.csv")
+  read.csv("data/SME_dataset.csv")
 input_x <- as.matrix(dat)
-input_x <- input_x[,-c(1, 2)]
+input_x <- input_x[, -c(1, 2)]
 input_x_std <- input_x %>%
   as_tibble(.) %>%
   mutate_all(., scale) %>% as.matrix(.)
@@ -48,8 +47,8 @@ input_x_std <- input_x %>%
 
 #------------segregate comp---------
 comp_str <- c(
-  "/result/connect_flag_df_threshold_0.1.csv",
-  "/result/connect_flag_df_threshold_0.05.csv"
+  "result/connect_flag_df_threshold_0.1.csv",
+  "result/connect_flag_df_threshold_0.05.csv"
 )
 c_str <- c("0.1 gamma C", "0.05 gamma C")
 nc_str <- c("0.1 gamma NC", "0.05 gamma NC")
@@ -80,16 +79,16 @@ allInput <- c(correlatedCompNo, unCorrelatedCompNo, allSample)
 X_test_num <-
   map2(.x = allInput,
        .y = allInput,
-       ~ sample(.x, length(.y) /
+       ~ sample(.x, length(.y) * 2 /
                   10 %>% round()))
-X_test <- X_test_num %>% map(., ~ input_x_std[c(.),])
+X_test <- X_test_num %>% map(., ~ input_x[c(.), ])
 X_train_num <-
   map(X_test, ~ setdiff(allSample[[1]], .x) %>% sample())
-X_train <- X_train_num %>% map(., ~ input_x_std[c(.),])
+X_train <- X_train_num %>% map(., ~ input_x[c(.), ])
 Y_train <- map(X_train_num, ~ dat$status[c(.)])
 Y_test <- map(X_test_num, ~ dat$status[c(.)])
 X_all_num <- map(.x = allInput, ~ sample(.x))
-X_all <- X_all_num %>% map(., ~ input_x_std[c(.),])
+X_all <- X_all_num %>% map(., ~ input_x[c(.), ])
 Y_all <- map(X_all_num, ~ dat$status[c(.)]) %>%
   map(., ~ map(., as.factor)) %>%
   map(., unlist)
@@ -98,7 +97,13 @@ Y_all <- map(X_all_num, ~ dat$status[c(.)]) %>%
 lasso_reg <- map2(
   .x = X_all,
   .y = Y_all,
-  ~ cv.glmnet(.x, .y, family = "binomial", type.measure = "mse")
+  ~ cv.glmnet(
+    .x,
+    .y,
+    family = "binomial",
+    type.measure = "mse",
+    intercept = FALSE
+  )
 )
 lasso_coef <- map(lasso_reg, ~ coef(., s = "lambda.min"))
 lasso_predict <- map2(.x = lasso_reg,
@@ -126,7 +131,8 @@ ela_reg <- map2(
     .y,
     alpha = 0.5,
     family = "binomial",
-    type.measure = "mse"
+    type.measure = "mse",
+    intercept = FALSE
   )
 )
 ela_coef <- map(ela_reg, ~ coef(., s = "lambda.min"))
@@ -147,12 +153,13 @@ ridge_reg <- map2(
     .y,
     alpha = 0,
     family = "binomial",
-    type.measure = "mse"
+    type.measure = "mse",
+    intercept = FALSE
   )
 )
 ridge_coef <- map(ridge_reg, ~ coef(., s = "lambda.min")) %>%
   map(., as.numeric) %>%
-  map(., abs)
+  map(., abs) %>% map(., ~ `^`(.x, 2))
 XY_all <-
   map2(.x = X_all, .y = Y_all, ~ list(.x, .y)) %>% map(., ~ setNames(., c("X", "Y")))
 ada_lasso_reg <- map2(
@@ -163,7 +170,8 @@ ada_lasso_reg <- map2(
     .x[[2]],
     penalty.factor = 1 / .y,
     family = "binomial",
-    type.measure = "mse"
+    type.measure = "mse",
+    intercept = FALSE
   )
 )
 ada_lasso_coef <- map(ada_lasso_reg, ~ coef(., s = "lambda.min"))
@@ -185,7 +193,8 @@ ada_ela_reg <- map2(
     alpha = 0.5,
     penalty.factor = 1 / .y,
     family = "binomial",
-    type.measure = "mse"
+    type.measure = "mse",
+    intercept = FALSE
   )
 )
 ada_ela_coef <- map(ada_ela_reg, ~ coef(., s = "lambda.min"))
@@ -215,6 +224,7 @@ all_coef_dfr <- all_coef %>%
     do.call(cbind, x)
   })
 names(all_coef_dfr) <- allName
+all_coef_dfr[abs(all_coef_dfr) < 0.001] = 0
 all_coef_dfr %>%
   kable(.) %>%
   kable_styling(.,
@@ -255,7 +265,7 @@ multiplot <-
 
 
 g1 <-
-  ggroc(lasso_roc) + xlab("FPR") + ylab("TPR") + ggtitle("Lasso") + geom_segment(aes(
+  ggroc(lasso_roc, legacy.axes = T) + xlab("FPR") + ylab("TPR") + ggtitle("Lasso") + geom_segment(aes(
     x = 0,
     xend = 1,
     y = 0,
@@ -264,7 +274,7 @@ g1 <-
   color = "darkgrey",
   linetype = "dashed")
 g2 <-
-  ggroc(ela_roc) + xlab("FPR") + ylab("TPR") + ggtitle("Elastic-Net") +
+  ggroc(ela_roc, legacy.axes = T) + xlab("FPR") + ylab("TPR") + ggtitle("Elastic-Net") +
   geom_segment(aes(
     x = 0,
     xend = 1,
@@ -274,7 +284,7 @@ g2 <-
   color = "darkgrey",
   linetype = "dashed")
 g3 <-
-  ggroc(ada_lasso_roc) + xlab("FPR") + ylab("TPR") + ggtitle("Adaptive lasso") +
+  ggroc(ada_lasso_roc, legacy.axes = T) + xlab("FPR") + ylab("TPR") + ggtitle("Adaptive lasso") +
   geom_segment(aes(
     x = 0,
     xend = 1,
@@ -284,7 +294,7 @@ g3 <-
   color = "darkgrey",
   linetype = "dashed")
 g4 <-
-  ggroc(ada_ela_roc) + xlab("FPR") + ylab("TPR") + ggtitle("Adaptive Elastic-Net") +
+  ggroc(ada_ela_roc, legacy.axes = T) + xlab("FPR") + ylab("TPR") + ggtitle("Adaptive Elastic-Net") +
   geom_segment(aes(
     x = 0,
     xend = 1,
@@ -296,11 +306,42 @@ g4 <-
 multiplot(g1, g2, g3, g4, cols = 2)
 
 #-------------roc test------------------
-roc.test(lasso_roc[[1]], lasso_roc[[3]])
-roc.test(lasso_roc[[2]], lasso_roc[[3]])
-roc.test(ada_lasso_roc[[3]], ada_lasso_roc[[1]])
-roc.test(ada_lasso_roc[[3]], ada_lasso_roc[[2]])
-roc.test(ela_roc[[3]], ela_roc[[1]])
-roc.test(ela_roc[[3]], ela_roc[[2]])
-roc.test(ada_ela_roc[[3]], ada_ela_roc[[1]])
-roc.test(ada_ela_roc[[3]], ada_ela_roc[[2]])
+roc_all = list(
+  roc.test(lasso_roc[[3]], lasso_roc[[1]]),
+  roc.test(lasso_roc[[3]], lasso_roc[[2]]),
+  roc.test(ada_lasso_roc[[3]], ada_lasso_roc[[1]]),
+  roc.test(ada_lasso_roc[[3]], ada_lasso_roc[[2]]),
+  roc.test(ela_roc[[3]], ela_roc[[1]]),
+  roc.test(ela_roc[[3]], ela_roc[[2]]),
+  roc.test(ada_ela_roc[[3]], ada_ela_roc[[1]]),
+  roc.test(ada_ela_roc[[3]], ada_ela_roc[[2]])
+)
+roc_stat = roc_all %>% map(.,  ~ cbind(.x$statistic, .x$p.value)) %>% (function(x) {
+  do.call(rbind, x)
+})
+rownames(roc_stat) = c(
+  'lasso 0.1',
+  'lasso 0.05',
+  'ada lasso 0.1',
+  'ada lasso 0.05',
+  'ela 0.1',
+  'ela 0.05',
+  'ada ela 0.1',
+  'ada ela 0.05'
+)
+colnames(roc_stat) = c('statistic', 'p')
+roc_stat %>%
+  kable(.) %>%
+  kable_styling(.,
+                bootstrap_options = c("striped", "hover", "condensed", "reponsive"))
+
+# show auc results
+auc_list = list(lasso_roc, ela_roc, ada_lasso_roc, ada_ela_roc) %>% map(.,  ~
+                                                                          map(.,  ~ .x$auc) %>% unlist) %>% (function(x) {
+                                                                            do.call(cbind, x)
+                                                                          })
+colnames(auc_list) = c('lasso', 'elastic net', 'adaptive lasso', 'adaptive elastic net')
+auc_list %>%
+  kable(.) %>%
+  kable_styling(.,
+                bootstrap_options = c("striped", "hover", "condensed", "reponsive"))
